@@ -1,6 +1,6 @@
 services:
   task-alerts-worker:
-    image: rjyspl/task-alerts-worker:latest
+    image: rjyspl/tasks-alerts-rmq-worker:latest
     container_name: task-alerts-worker
     env_file: .env
 

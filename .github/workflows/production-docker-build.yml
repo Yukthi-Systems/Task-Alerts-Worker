@@ -58,5 +58,5 @@ jobs:
           sbom: true
           provenance: true
           tags: |
-            rjyspl/task-alerts-worker:latest
-            rjyspl/task-alerts-worker:${{ steps.tag.outputs.TAG }}
+            rjyspl/tasks-alerts-rmq-worker:latest
+            rjyspl/tasks-alerts-rmq-worker:${{ steps.tag.outputs.TAG }}
