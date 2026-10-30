@@ -1,0 +1,21 @@
+services:
+  task-alerts-worker:
+    image: rjyspl/task-alerts-worker:latest
+    container_name: task-alerts-worker
+    env_file: .env
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - tasks-network
+
+    restart: always
+
+
+networks:
+  tasks-network:
+    external: true
