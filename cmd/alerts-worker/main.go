@@ -42,13 +42,14 @@ func main() {
 		AppURL:     cfg.AppURL,
 		FCMAppName: cfg.FCMAppName,
 		BatchSize:  cfg.BatchSize,
+		Parallel:   cfg.Parallel,
 		StaleAfter: cfg.StaleAfter,
 		SendAhead:  cfg.Tick + time.Minute,
 	}
 
 	slog.Info("alerts worker started",
 		"tick", cfg.Tick.String(), "send_ahead", w.SendAhead.String(),
-		"batch_size", cfg.BatchSize, "stale_after", cfg.StaleAfter.String())
+		"batch_size", cfg.BatchSize, "parallel", cfg.Parallel, "stale_after", cfg.StaleAfter.String())
 
 	ticker := time.NewTicker(cfg.Tick)
 	defer ticker.Stop()

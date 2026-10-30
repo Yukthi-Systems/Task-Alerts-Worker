@@ -24,6 +24,7 @@ type Config struct {
 	FCMAppName string        // Firebase app name in V3-Notifications-Worker's FIREBASE_APPS
 	Tick       time.Duration // how often to poll for due alerts
 	BatchSize  int           // max alerts claimed per tick
+	Parallel   int           // alerts published at the same time
 	StaleAfter time.Duration // alerts overdue by more than this are dropped
 }
 
@@ -84,6 +85,7 @@ func Load() (Config, error) {
 		FCMAppName: optional("FCM_APP_NAME", "calendar"),
 		Tick:       time.Duration(positiveInt("TICK_SECONDS", 300)) * time.Second,
 		BatchSize:  positiveInt("BATCH_SIZE", 100),
+		Parallel:   positiveInt("PUBLISH_PARALLEL", 10),
 		StaleAfter: duration("STALE_AFTER", time.Hour),
 	}
 

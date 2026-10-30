@@ -135,4 +135,17 @@ func TestTick(t *testing.T) {
 	if len(pub.sent) != 3 {
 		t.Errorf("re-tick published again: %d messages", len(pub.sent))
 	}
+
+	// A backlog published in parallel across several batches: each alert
+	// goes out exactly once.
+	exec(`INSERT INTO task_alerts (task_id, alert_recipient_id, alert_at, notify_via_email, notify_via_push)
+	      SELECT $1, $2, now() - g * interval '1 second', true, false FROM generate_series(1, 45) g`, taskID, userID)
+	w.Parallel = 8
+	w.Tick(ctx)
+	if got := unsent(); got != 1 {
+		t.Fatalf("after parallel tick: %d unsent, want 1 (future)", got)
+	}
+	if len(pub.sent) != 3+45 {
+		t.Errorf("parallel tick published %d messages, want 45", len(pub.sent)-3)
+	}
 }

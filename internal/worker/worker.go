@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Yukthi-Systems/Task-Alerts-Worker/internal/notify"
@@ -21,6 +23,7 @@ type Worker struct {
 	BatchSize  int
 	StaleAfter time.Duration
 	SendAhead  time.Duration // claim alerts due up to this far ahead; must be ≥ the tick interval
+	Parallel   int           // alerts published at the same time; below 1 means one at a time
 }
 
 // Tick processes due alerts until there are none left or a publish fails.
@@ -56,15 +59,14 @@ func (w *Worker) batch(ctx context.Context) (int, bool) {
 	}
 	defer b.Rollback(ctx)
 
-	sent, failed := 0, 0
-	for _, a := range b.Alerts {
-		if err := w.send(ctx, a); err != nil {
-			// RabbitMQ is most likely down, so stop instead of waiting on a
-			// timeout for every remaining alert; they're retried next tick.
-			slog.Error("publishing alert failed",
-				"task_id", a.TaskID, "recipient_id", a.RecipientID, "alert_at", a.AlertAt, "err", err)
-			failed = len(b.Alerts) - sent
-			break
+	// Publish in parallel. The batch's transaction can't be used concurrently,
+	// so alerts are marked sent afterwards, one by one.
+	ok := w.publishAll(ctx, b.Alerts)
+
+	sent := 0
+	for i, a := range b.Alerts {
+		if !ok[i] {
+			continue
 		}
 		if err := b.MarkSent(ctx, a); err != nil {
 			slog.Error("marking alert sent failed", "err", err)
@@ -72,6 +74,7 @@ func (w *Worker) batch(ctx context.Context) (int, bool) {
 		}
 		sent++
 	}
+	failed := len(b.Alerts) - sent
 
 	if err := b.Commit(ctx); err != nil {
 		slog.Error("committing batch failed; its alerts will be sent again", "sent", sent, "err", err)
@@ -82,6 +85,38 @@ func (w *Worker) batch(ctx context.Context) (int, bool) {
 			"took_ms", time.Since(start).Milliseconds())
 	}
 	return len(b.Alerts), failed == 0
+}
+
+// publishAll sends the alerts, w.Parallel at a time, and reports which ones
+// went out. After the first failure it starts no new alerts: RabbitMQ is most
+// likely down, so instead of waiting on a timeout for every remaining alert,
+// they're left unsent and retried next tick.
+func (w *Worker) publishAll(ctx context.Context, alerts []store.Alert) []bool {
+	ok := make([]bool, len(alerts))
+	var failed atomic.Bool
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, max(w.Parallel, 1))
+	for i, a := range alerts {
+		slots <- struct{}{}
+		if failed.Load() {
+			<-slots
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			if err := w.send(ctx, a); err != nil {
+				failed.Store(true)
+				slog.Error("publishing alert failed",
+					"task_id", a.TaskID, "recipient_id", a.RecipientID, "alert_at", a.AlertAt, "err", err)
+				return
+			}
+			ok[i] = true
+		}()
+	}
+	wg.Wait()
+	return ok
 }
 
 // send publishes every channel the alert asks for. If push fails after email
